@@ -82,7 +82,64 @@ Eksctl is a command-line tool used for managing Amazon EKS (Elastic Kubernetes S
   eksctl version
   ```
   
-**Stage 2**: Build Frontend and Backend Images  
+**Stage 2**: Build Frontend and Backend Images
+
+**A. Set up Elastic Container Registry (ECR)**  
+ECR is similar to Docker Hub, where we store Docker images.
+
+- Go to your AWS console, search for ECR, and click on "Create repository" for the frontend. Set the visibility setting to public.
+- In your terminal, navigate to the frontend directory and run the `ls` command.
+- Go to your ECR repository and click on "View push commands."
+
+![Alt text](image-1.png)
+
+**B. Build and Push the Frontend Image**
+
+Run the following commands one by one to build the frontend image and push it to the ECR repository:
+
+```bash
+aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l0l7e4u1
+docker build -t 3-tier-frontend .
+docker tag 3-tier-frontend:latest public.ecr.aws/l0l7e4u1/3-tier-frontend:latest
+docker push public.ecr.aws/l0l7e4u1/3-tier-frontend:latest
+```
+
+**C. Run a Container from the Frontend Image**
+
+1. List your Docker images to copy the image name:
+   ```bash
+   docker images
+   ```
+
+2. Run the frontend container:
+   ```bash
+   docker run -d -p 3000:3000 3-tier-frontend:latest
+   ```
+
+*Note: Ensure port 3000 is allowed in your inbound rules in the NSG (Network Security Group).*
+
+- You can now check if your frontend is set up and running by browsing to `public-ip:3000`. The application should be running on port 3000.
+
+**Set Up Backend**
+
+**A. Set Up the Backend**
+
+1. Navigate to the backend directory.
+2. Go to your ECR repository and click on "View push commands" for the backend repository.
+
+![Alt text](image-1.png)
+
+3. Run the following commands one by one in your terminal:
+
+```bash
+aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/l0l7e4u1
+docker build -t 3-tier-backend .
+docker tag 3-tier-backend:latest public.ecr.aws/l0l7e4u1/3-tier-backend:latest
+docker push public.ecr.aws/l0l7e4u1/3-tier-backend:latest
+```
+
+Now your backend image is successfully built and pushed to the Elastic Container Registry, which will be used when creating the Elastic Kubernetes Service.
+
 **Stage 3**: Configure Kubernetes  
 **Stage 4**: Set Up Application Load Balancer and Ingress  
 **Stage 5**: Tear Down the Infrastructure
