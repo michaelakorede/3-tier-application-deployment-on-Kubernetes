@@ -140,6 +140,144 @@ docker push public.ecr.aws/l0l7e4u1/3-tier-backend:latest
 
 Now your backend image is successfully built and pushed to the Elastic Container Registry, which will be used when creating the Elastic Kubernetes Service.
 
-**Stage 3**: Configure Kubernetes  
+**Stage 3**: Configure Kubernetes
+
+Kubernetes is a portable, extensible, open-source platform for managing containerized workloads and services, facilitating both declarative configuration and automation.
+
+**Container Deployment Era**: Containers, similar to VMs but with more relaxed isolation properties, share the operating system (OS) among applications, making them lightweight. Like a VM, a container has its own filesystem, share of CPU, memory, process space, and more. Being decoupled from the underlying infrastructure, they are portable across clouds and OS distributions.
+
+**Why You Need Kubernetes and What It Can Do**
+
+Containers are excellent for bundling and running applications. In a production environment, managing these containers to ensure zero downtime is crucial. For example, if a container goes down, another container should start automatically. Kubernetes handles this behavior seamlessly.
+
+**A. Set Up EKS Cluster**
+
+1. Create an EKS cluster:
+    ```bash
+    eksctl create cluster --name three-tier-cluster --region us-east-1 --node-type t2.medium --nodes-min 2 --nodes-max 2
+    aws eks update-kubeconfig --region us-east-1 --name three-tier-cluster
+    kubectl get nodes
+    ```
+    **Note**: It takes 15 to 20 minutes to create a cluster. You can monitor the creation process in AWS CloudFormation by searching for it in your AWS console.
+
+2. Create a namespace:
+    ```bash
+    kubectl create namespace workshop
+    kubectl config set-context --current --namespace workshop
+    ```
+
+**B. Create Deployment and Service for Frontend**
+
+1. Go to the `k8s_manifests` directory and edit the `frontend-deployment.yaml` file.
+2. Update the image name in `frontend-deployment.yaml`:
+    - Go to your ECR repository, select the frontend repository, click on "View public listing," copy the image name, and paste it into the `frontend-deployment.yaml` file.
+3. Create the deployment and service for the frontend:
+    ```bash
+    kubectl apply -f frontend-deployment.yaml
+    kubectl apply -f frontend-service.yaml
+    ```
+
+**C. Create Deployment and Service for Backend**
+
+1. In the same folder, edit the `backend-deployment.yaml` file.
+2. Update the image name in `backend-deployment.yaml`:
+    - Go to your ECR repository, select the backend repository, click on "View public listing," copy the image name, and paste it into the `backend-deployment.yaml` file.
+3. Create the deployment and service for the backend:
+    ```bash
+    kubectl apply -f backend-deployment.yaml
+    kubectl apply -f backend-service.yaml
+    kubectl get pods -n workshop
+    ```
+
+**D. Set Up Database Tier**
+
+1. Locate the `mongo` folder containing deployment, service, and secrets manifests.
+2. Set up the database tier:
+    ```bash
+    kubectl apply -f .
+    kubectl get all
+    ```
+
+Now that all three tiers (frontend, backend, and database) are ready, you need to set up an application load balancer to route external traffic to the cluster and an ingress for internal routing between the tiers.
+
 **Stage 4**: Set Up Application Load Balancer and Ingress  
+
+
+
+**A: Set Up AWS Load Balancer**
+
+1. Fetch the IAM policy for your ALB:
+    ```bash
+    curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/install/iam_policy.json
+    ```
+
+2. Create the IAM policy in your AWS account:
+    ```bash
+    aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json
+    ```
+
+3. Apply the load balancer policy to your EKS cluster:
+    ```bash
+    eksctl utils associate-iam-oidc-provider --region=us-east-1 --cluster=three-tier-cluster --approve
+    ```
+
+4. Create and attach a service account to your cluster (replace `767397866747` with your AWS account number):
+    ```bash
+    eksctl create iamserviceaccount --cluster=three-tier-cluster --namespace=kube-system --name=aws-load-balancer-controller --role-name AmazonEKSLoadBalancerControllerRole --attach-policy-arn=arn:aws:iam::767397866747:policy/AWSLoadBalancerControllerIAMPolicy --approve --region=us-east-1
+    ```
+
+5. Install Helm (a tool for managing Kubernetes applications):
+    ```bash
+    sudo snap install helm --classic
+    ```
+
+6. Add the EKS repository using Helm:
+    ```bash
+    helm repo add eks https://aws.github.io/eks-charts
+    ```
+
+7. Update the EKS repository using Helm:
+    ```bash
+    helm repo update eks
+    ```
+
+8. Install the load balancer controller on your EKS cluster:
+    ```bash
+    helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=my-cluster --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
+    kubectl get deployment -n kube-system aws-load-balancer-controller
+    ```
+
+Now your load balancer is set up. Let's set up Ingress for internal routing.
+
+**Step 2: Set Up Ingress for Internal Routing**
+
+1. Locate the `full_stack_lb.yaml` file.
+2. Apply the Ingress configuration:
+    ```bash
+    kubectl apply -f full_stack_lb.yaml
+    kubectl get ing -n workshop
+    ```
+
+3. Go to your web browser and paste the DNS address provided.
+
+Congratulations! Your application is now accessible through the load balancer and ingress.
+
 **Stage 5**: Tear Down the Infrastructure
+
+1. In your current folder, run the following command to delete all resources:
+    ```bash
+    kubectl delete -f .
+    ```
+
+2. Navigate to the `mongo` folder and delete the database tier:
+    ```bash
+    kubectl delete -f .
+    ```
+
+3. Delete the EKS cluster and the CloudFormation stack:
+    ```bash
+    eksctl delete cluster --name three-tier-cluster --region us-east-1
+    aws cloudformation delete-stack --stack-name eksctl-three-tier-cluster-cluster
+    ```
+
+4. You can check all the changes in the CloudFormation console of AWS.
